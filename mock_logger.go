@@ -23,8 +23,8 @@ func NewMockLogger() *MockLogger {
 	}
 }
 
-// add is a helper method to add log entries
-func (m *MockLogger) add(level, format string, v ...interface{}) {
+// add is a helper method to add log entries. Returns the index of the created entry.
+func (m *MockLogger) add(level, format string, v ...interface{}) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	msg := fmt.Sprintf(format, v...)
@@ -35,25 +35,23 @@ func (m *MockLogger) add(level, format string, v ...interface{}) {
 		"message":   msg,
 	}
 	m.StructuredEntries = append(m.StructuredEntries, entry)
+	return len(m.StructuredEntries) - 1
 }
 
 // addWithFields is a helper method for structured logging with fields
 func (m *MockLogger) addWithFields(level, format string, fields map[string]interface{}, v ...interface{}) {
-	m.add(level, format, v...)
+	idx := m.add(level, format, v...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Get the last entry and add the fields
-	e := m.StructuredEntries[len(m.StructuredEntries)-1]
+	e := m.StructuredEntries[idx]
 
-	// Merge base fields
 	if base := GetBaseFields(); base != nil {
 		for k, vv := range base {
 			e[k] = vv
 		}
 	}
 
-	// Add custom fields
 	for k, vv := range fields {
 		e[k] = vv
 	}
@@ -61,12 +59,11 @@ func (m *MockLogger) addWithFields(level, format string, fields map[string]inter
 
 // addWithCtx is a helper method for context-aware logging
 func (m *MockLogger) addWithCtx(ctx context.Context, level, format string, v ...interface{}) {
-	m.add(level, format, v...)
+	idx := m.add(level, format, v...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Get the last entry and add trace_id if present
-	e := m.StructuredEntries[len(m.StructuredEntries)-1]
+	e := m.StructuredEntries[idx]
 
 	if traceID := TraceID(ctx); traceID != "" {
 		e["trace_id"] = traceID

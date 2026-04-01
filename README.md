@@ -83,7 +83,6 @@ The `LogConfig` struct allows you to configure the logger:
 | Compress   | bool    | Whether to compress rotated log files with gzip                            | false        |
 | Format     | string  | Log format: "text" or "json"                                               | "text"       |
 | Outputs    | string  | Output destination: "console", "file", or "both"                           | "both"       |
-| AlertPretty | bool   | Whether to pretty-print alert logs                                         | false        |
 
 ## Usage
 
@@ -317,11 +316,11 @@ time=2026-01-10T12:00:00.000+08:00 level=INFO msg="User logged in" source="main.
 
 ## Performance
 
-This library is built for performance. Benchmarks show:
+This library is built for performance. Benchmarks (file output) show:
 
 ```
-BenchmarkLoggerInfo-8          1000000    1023 ns/op
-BenchmarkLoggerWithFields-8     500000    2156 ns/op
+BenchmarkLoggerInfo-8           380000    3295 ns/op    686 B/op    10 allocs/op
+BenchmarkLoggerWithFields-8     330000    3650 ns/op   1345 B/op    15 allocs/op
 ```
 
 The library minimizes allocations and uses efficient buffering for log rotation.

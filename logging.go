@@ -2,22 +2,12 @@ package logging
 
 import (
 	"context"
-	"log"
-	"os"
 )
 
 type ctxKey string
 
 const traceIDKey ctxKey = "trace_id"
 const ctxFieldsKey ctxKey = "ctx_fields"
-
-// Init initializes a basic logger that writes to stderr with standard flags.
-// Call once on startup.
-func Init() {
-	log.SetOutput(os.Stderr)
-	log.SetFlags(log.LstdFlags)
-}
-
 // WithTraceID returns a child context carrying a trace ID for downstream logging.
 func WithTraceID(ctx context.Context, traceID string) context.Context {
 	return context.WithValue(ctx, traceIDKey, traceID)
@@ -53,10 +43,15 @@ func WithCtxFields(ctx context.Context, fields map[string]interface{}) context.C
 }
 
 // CtxFields extracts custom fields from context if present.
+// Returns a copy to prevent mutation of the stored context values.
 func CtxFields(ctx context.Context) map[string]interface{} {
 	v := ctx.Value(ctxFieldsKey)
 	if m, ok := v.(map[string]interface{}); ok {
-		return m
+		copy := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			copy[k] = v
+		}
+		return copy
 	}
 	return nil
 }
@@ -117,23 +112,56 @@ func (c *ContextLogger) ErrorWithFields(format string, fields map[string]interfa
 }
 
 func (c *ContextLogger) TraceWithCtx(ctx context.Context, format string, v ...interface{}) {
-	Logger.TraceWithCtx(ctx, format, v...)
+	Logger.TraceWithCtx(c.mergeCtx(ctx), format, v...)
 }
 
 func (c *ContextLogger) DebugWithCtx(ctx context.Context, format string, v ...interface{}) {
-	Logger.DebugWithCtx(ctx, format, v...)
+	Logger.DebugWithCtx(c.mergeCtx(ctx), format, v...)
 }
 
 func (c *ContextLogger) InfoWithCtx(ctx context.Context, format string, v ...interface{}) {
-	Logger.InfoWithCtx(ctx, format, v...)
+	Logger.InfoWithCtx(c.mergeCtx(ctx), format, v...)
 }
 
 func (c *ContextLogger) WarnWithCtx(ctx context.Context, format string, v ...interface{}) {
-	Logger.WarnWithCtx(ctx, format, v...)
+	Logger.WarnWithCtx(c.mergeCtx(ctx), format, v...)
 }
 
 func (c *ContextLogger) ErrorWithCtx(ctx context.Context, format string, v ...interface{}) {
-	Logger.ErrorWithCtx(ctx, format, v...)
+	Logger.ErrorWithCtx(c.mergeCtx(ctx), format, v...)
+}
+
+// mergeCtx returns a new context that merges fields from the bound context and the passed context.
+// Fields from the passed context take precedence.
+func (c *ContextLogger) mergeCtx(ctx context.Context) context.Context {
+	boundFields := CtxFields(c.ctx)
+	passedFields := CtxFields(ctx)
+	boundTraceID := TraceID(c.ctx)
+	passedTraceID := TraceID(ctx)
+
+	// If bound ctx has nothing to merge, return the passed ctx as-is
+	if len(boundFields) == 0 && boundTraceID == "" {
+		return ctx
+	}
+
+	merged := make(map[string]interface{}, len(boundFields)+len(passedFields))
+	for k, v := range boundFields {
+		merged[k] = v
+	}
+	for k, v := range passedFields {
+		merged[k] = v
+	}
+
+	// trace_id: passed ctx takes precedence
+	traceID := boundTraceID
+	if passedTraceID != "" {
+		traceID = passedTraceID
+	}
+	if traceID != "" {
+		merged["trace_id"] = traceID
+	}
+
+	return context.WithValue(ctx, ctxFieldsKey, merged)
 }
 
 func (c *ContextLogger) SetLevel(level LogLevel) {

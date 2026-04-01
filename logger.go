@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"log/slog"
 
@@ -80,15 +81,39 @@ func (l LogLevel) String() string {
 }
 
 // Logger is the global logger instance. The interface type allows for test replacement.
-var Logger LoggerInterface
+// It is safe to use before InitLogger — logs are silently discarded.
+var Logger LoggerInterface = &noopLogger{}
+
+// noopLogger discards all log output. Used as the default before InitLogger is called.
+type noopLogger struct{}
+
+func (n *noopLogger) Trace(string, ...interface{})               {}
+func (n *noopLogger) Debug(string, ...interface{})               {}
+func (n *noopLogger) Info(string, ...interface{})                {}
+func (n *noopLogger) Warn(string, ...interface{})                {}
+func (n *noopLogger) Error(string, ...interface{})               {}
+func (n *noopLogger) TraceWithFields(string, map[string]interface{}, ...interface{})  {}
+func (n *noopLogger) DebugWithFields(string, map[string]interface{}, ...interface{})  {}
+func (n *noopLogger) InfoWithFields(string, map[string]interface{}, ...interface{})   {}
+func (n *noopLogger) WarnWithFields(string, map[string]interface{}, ...interface{})   {}
+func (n *noopLogger) ErrorWithFields(string, map[string]interface{}, ...interface{})  {}
+func (n *noopLogger) TraceWithCtx(context.Context, string, ...interface{})  {}
+func (n *noopLogger) DebugWithCtx(context.Context, string, ...interface{})  {}
+func (n *noopLogger) InfoWithCtx(context.Context, string, ...interface{})   {}
+func (n *noopLogger) WarnWithCtx(context.Context, string, ...interface{})   {}
+func (n *noopLogger) ErrorWithCtx(context.Context, string, ...interface{})  {}
+func (n *noopLogger) SetLevel(LogLevel)                                 {}
+func (n *noopLogger) Sync() error                                      { return nil }
 
 var (
 	loggerInitMu sync.Mutex
-	loggerOnce   sync.Once
 )
 
 // globalLogConfig stores the initialization configuration for creating rotated log files.
-var globalLogConfig LogConfig
+var (
+	globalLogConfig   LogConfig
+	globalLogConfigMu sync.RWMutex
+)
 
 // LogConfig defines the configuration for the logger.
 type LogConfig struct {
@@ -100,7 +125,6 @@ type LogConfig struct {
 	Compress    bool   // Whether to compress rotated log files
 	Format      string // Log format: "text" or "json"
 	Outputs     string // Output destination: "console", "file", "both"
-	AlertPretty bool   // Whether to pretty-print alert logs
 }
 
 // Validate checks if the configuration is valid and returns a normalized config.
@@ -155,8 +179,8 @@ func (c *LogConfig) Validate() error {
 }
 
 type logger struct {
-	lg     *slog.Logger
-	level  LogLevel
+	lg     atomic.Pointer[slog.Logger]
+	level  atomic.Int32
 	writer io.Writer
 	format string // "text" or "json"
 }
@@ -179,13 +203,15 @@ func InitLogger(cfg LogConfig) {
 		cfg.Validate()
 	}
 
+	globalLogConfigMu.Lock()
 	globalLogConfig = cfg
+	globalLogConfigMu.Unlock()
 
 	lvl := parseLogLevel(cfg.Level)
 	l := &logger{
-		level:  lvl,
 		format: cfg.Format,
 	}
+	l.level.Store(int32(lvl))
 
 	// Ensure log directory exists
 	dir := filepath.Dir(cfg.File)
@@ -250,7 +276,7 @@ func InitLogger(cfg LogConfig) {
 	// Don't print source file path in logs (AddSource=false) to avoid leaking local filesystem paths
 	opts := slog.HandlerOptions{AddSource: false}
 	// Configure handler's minimum level to ensure underlying handler doesn't filter logs below configured level
-	switch l.level {
+	switch lvl {
 	case LevelTrace:
 		opts.Level = slogLevelTrace
 	case LevelDebug:
@@ -271,7 +297,7 @@ func InitLogger(cfg LogConfig) {
 		handler = slog.NewTextHandler(l.writer, &opts)
 	}
 	slogLogger := slog.New(handler)
-	l.lg = slogLogger
+	l.lg.Store(slogLogger)
 
 	Logger = l
 }
@@ -295,24 +321,25 @@ func parseLogLevel(s string) LogLevel {
 
 // log is a helper method to reduce code duplication in logging methods
 func (l *logger) log(level LogLevel, format string, v []interface{}, attrs []slog.Attr) {
-	if l.level > level {
+	if LogLevel(l.level.Load()) > level {
 		return
 	}
 
 	msg := fmt.Sprintf(format, v...)
 	allAttrs := append([]slog.Attr{sourceAttr()}, attrs...)
+	lg := l.lg.Load()
 
 	switch level {
 	case LevelTrace:
-		l.lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(allAttrs)...)
+		lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(allAttrs)...)
 	case LevelDebug:
-		l.lg.Debug(msg, attrsToAny(allAttrs)...)
+		lg.Debug(msg, attrsToAny(allAttrs)...)
 	case LevelInfo:
-		l.lg.Info(msg, attrsToAny(allAttrs)...)
+		lg.Info(msg, attrsToAny(allAttrs)...)
 	case LevelWarn:
-		l.lg.Warn(msg, attrsToAny(allAttrs)...)
+		lg.Warn(msg, attrsToAny(allAttrs)...)
 	case LevelError:
-		l.lg.Error(msg, attrsToAny(allAttrs)...)
+		lg.Error(msg, attrsToAny(allAttrs)...)
 	}
 }
 
@@ -362,7 +389,7 @@ func (l *logger) ErrorWithFields(format string, fields map[string]interface{}, v
 }
 
 func (l *logger) SetLevel(level LogLevel) {
-	l.level = level
+	l.level.Store(int32(level))
 	// Update the slog handler's level as well
 	var slogLevel slog.Level
 	switch level {
@@ -388,7 +415,7 @@ func (l *logger) SetLevel(level LogLevel) {
 	} else {
 		handler = slog.NewTextHandler(l.writer, &opts)
 	}
-	l.lg = slog.New(handler)
+	l.lg.Store(slog.New(handler))
 }
 
 // Sync flushes any buffered log entries. Implements LoggerInterface.
@@ -401,7 +428,7 @@ func (l *logger) Sync() error {
 
 // logWithCtx is a helper method for context-aware logging
 func (l *logger) logWithCtx(ctx context.Context, level LogLevel, format string, v []interface{}) {
-	if l.level > level {
+	if LogLevel(l.level.Load()) > level {
 		return
 	}
 
@@ -416,17 +443,18 @@ func (l *logger) logWithCtx(ctx context.Context, level LogLevel, format string, 
 		attrs = append(attrs, slog.Any(k, v))
 	}
 
+	lg := l.lg.Load()
 	switch level {
 	case LevelTrace:
-		l.lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(attrs)...)
+		lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(attrs)...)
 	case LevelDebug:
-		l.lg.Debug(msg, attrsToAny(attrs)...)
+		lg.Debug(msg, attrsToAny(attrs)...)
 	case LevelInfo:
-		l.lg.Info(msg, attrsToAny(attrs)...)
+		lg.Info(msg, attrsToAny(attrs)...)
 	case LevelWarn:
-		l.lg.Warn(msg, attrsToAny(attrs)...)
+		lg.Warn(msg, attrsToAny(attrs)...)
 	case LevelError:
-		l.lg.Error(msg, attrsToAny(attrs)...)
+		lg.Error(msg, attrsToAny(attrs)...)
 	}
 }
 
@@ -481,8 +509,8 @@ func toAttrs(fields map[string]interface{}) []slog.Attr {
 
 // shouldSkipFrame determines if a frame should be skipped when finding the call site.
 func shouldSkipFrame(function, filename string) bool {
-	// Skip frames from this logger implementation
-	if filename == "logger.go" {
+	// Skip frames from this logging package
+	if strings.Contains(function, "logging.") {
 		return true
 	}
 	// Skip testing and runtime frames
@@ -598,12 +626,16 @@ func GetBaseFields() map[string]interface{} {
 
 // GetGlobalConfig returns a copy of the global log configuration.
 func GetGlobalConfig() LogConfig {
+	globalLogConfigMu.RLock()
+	defer globalLogConfigMu.RUnlock()
 	return globalLogConfig
 }
 
 // GetRotatedWriter returns a rotated io.WriteCloser using the global configuration's rotation policy.
 func GetRotatedWriter(filename string) io.WriteCloser {
+	globalLogConfigMu.RLock()
 	cfg := globalLogConfig
+	globalLogConfigMu.RUnlock()
 	maxSize := cfg.MaxSize
 	if maxSize <= 0 {
 		maxSize = 10
