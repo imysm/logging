@@ -28,14 +28,17 @@ const (
 
 // LoggerInterface defines the logging abstraction for easy mocking in tests.
 type LoggerInterface interface {
+	Trace(format string, v ...interface{})
 	Debug(format string, v ...interface{})
 	Info(format string, v ...interface{})
 	Warn(format string, v ...interface{})
 	Error(format string, v ...interface{})
+	TraceWithFields(format string, fields map[string]interface{}, v ...interface{})
 	DebugWithFields(format string, fields map[string]interface{}, v ...interface{})
 	InfoWithFields(format string, fields map[string]interface{}, v ...interface{})
 	WarnWithFields(format string, fields map[string]interface{}, v ...interface{})
 	ErrorWithFields(format string, fields map[string]interface{}, v ...interface{})
+	TraceWithCtx(ctx context.Context, format string, v ...interface{})
 	DebugWithCtx(ctx context.Context, format string, v ...interface{})
 	InfoWithCtx(ctx context.Context, format string, v ...interface{})
 	WarnWithCtx(ctx context.Context, format string, v ...interface{})
@@ -48,15 +51,21 @@ type LoggerInterface interface {
 type LogLevel int
 
 const (
-	LevelDebug LogLevel = iota
+	LevelTrace LogLevel = iota
+	LevelDebug
 	LevelInfo
 	LevelWarn
 	LevelError
 )
 
+// slogLevelTrace is the slog level for trace, lower than slog.LevelDebug (-4).
+const slogLevelTrace slog.Level = -8
+
 // String returns the string representation of the log level.
 func (l LogLevel) String() string {
 	switch l {
+	case LevelTrace:
+		return "TRACE"
 	case LevelDebug:
 		return "DEBUG"
 	case LevelInfo:
@@ -83,7 +92,7 @@ var globalLogConfig LogConfig
 
 // LogConfig defines the configuration for the logger.
 type LogConfig struct {
-	Level       string // Log level: debug, info, warn, error
+	Level       string // Log level: trace, debug, info, warn, error
 	File        string // Log file path
 	MaxSize     int    // Maximum size in megabytes before rotation
 	MaxBackups  int    // Maximum number of old log files to retain
@@ -120,7 +129,7 @@ func (c *LogConfig) Validate() error {
 
 	// Validate log level
 	switch strings.ToLower(c.Level) {
-	case "debug", "info", "warn", "error", "warning":
+	case "trace", "debug", "info", "warn", "error", "warning":
 		// Valid
 	default:
 		return fmt.Errorf("invalid log level: %s", c.Level)
@@ -242,6 +251,8 @@ func InitLogger(cfg LogConfig) {
 	opts := slog.HandlerOptions{AddSource: false}
 	// Configure handler's minimum level to ensure underlying handler doesn't filter logs below configured level
 	switch l.level {
+	case LevelTrace:
+		opts.Level = slogLevelTrace
 	case LevelDebug:
 		opts.Level = slog.LevelDebug
 	case LevelInfo:
@@ -267,6 +278,8 @@ func InitLogger(cfg LogConfig) {
 
 func parseLogLevel(s string) LogLevel {
 	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "trace":
+		return LevelTrace
 	case "debug":
 		return LevelDebug
 	case "info":
@@ -290,6 +303,8 @@ func (l *logger) log(level LogLevel, format string, v []interface{}, attrs []slo
 	allAttrs := append([]slog.Attr{sourceAttr()}, attrs...)
 
 	switch level {
+	case LevelTrace:
+		l.lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(allAttrs)...)
 	case LevelDebug:
 		l.lg.Debug(msg, attrsToAny(allAttrs)...)
 	case LevelInfo:
@@ -299,6 +314,15 @@ func (l *logger) log(level LogLevel, format string, v []interface{}, attrs []slo
 	case LevelError:
 		l.lg.Error(msg, attrsToAny(allAttrs)...)
 	}
+}
+
+func (l *logger) Trace(format string, v ...interface{}) {
+	l.log(LevelTrace, format, v, nil)
+}
+
+func (l *logger) TraceWithFields(format string, fields map[string]interface{}, v ...interface{}) {
+	merged := WithBaseFields(fields)
+	l.log(LevelTrace, format, v, toAttrs(merged))
 }
 
 func (l *logger) Debug(format string, v ...interface{}) {
@@ -342,6 +366,8 @@ func (l *logger) SetLevel(level LogLevel) {
 	// Update the slog handler's level as well
 	var slogLevel slog.Level
 	switch level {
+	case LevelTrace:
+		slogLevel = slogLevelTrace
 	case LevelDebug:
 		slogLevel = slog.LevelDebug
 	case LevelInfo:
@@ -387,6 +413,8 @@ func (l *logger) logWithCtx(ctx context.Context, level LogLevel, format string, 
 	}
 
 	switch level {
+	case LevelTrace:
+		l.lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(attrs)...)
 	case LevelDebug:
 		l.lg.Debug(msg, attrsToAny(attrs)...)
 	case LevelInfo:
@@ -396,6 +424,11 @@ func (l *logger) logWithCtx(ctx context.Context, level LogLevel, format string, 
 	case LevelError:
 		l.lg.Error(msg, attrsToAny(attrs)...)
 	}
+}
+
+// TraceWithCtx logs with context, automatically extracting trace_id if present
+func (l *logger) TraceWithCtx(ctx context.Context, format string, v ...interface{}) {
+	l.logWithCtx(ctx, LevelTrace, format, v)
 }
 
 // DebugWithCtx logs with context, automatically extracting trace_id if present

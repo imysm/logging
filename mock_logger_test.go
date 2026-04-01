@@ -117,16 +117,18 @@ func TestMockLogger_WithCtx(t *testing.T) {
 func TestMockLogger_AllLogLevels(t *testing.T) {
 	m := NewMockLogger()
 
+	m.Trace("trace message")
 	m.Debug("debug message")
 	m.Info("info message")
 	m.Warn("warn message")
 	m.Error("error message")
 
-	if len(m.Entries) != 4 {
-		t.Errorf("expected 4 entries, got %d", len(m.Entries))
+	if len(m.Entries) != 5 {
+		t.Errorf("expected 5 entries, got %d", len(m.Entries))
 	}
 
 	expected := []string{
+		"[TRACE] trace message",
 		"[DEBUG] debug message",
 		"[INFO] info message",
 		"[WARN] warn message",

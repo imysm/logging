@@ -80,6 +80,10 @@ func (m *MockLogger) addWithCtx(ctx context.Context, level, format string, v ...
 	}
 }
 
+func (m *MockLogger) Trace(format string, v ...interface{}) {
+	m.add("TRACE", format, v...)
+}
+
 func (m *MockLogger) Debug(format string, v ...interface{}) {
 	m.add("DEBUG", format, v...)
 }
@@ -106,6 +110,10 @@ func (m *MockLogger) Sync() error {
 }
 
 // WithFields variants for structured logging used in tests
+func (m *MockLogger) TraceWithFields(format string, fields map[string]interface{}, v ...interface{}) {
+	m.addWithFields("TRACE", format, fields, v...)
+}
+
 func (m *MockLogger) DebugWithFields(format string, fields map[string]interface{}, v ...interface{}) {
 	m.addWithFields("DEBUG", format, fields, v...)
 }
@@ -123,6 +131,10 @@ func (m *MockLogger) ErrorWithFields(format string, fields map[string]interface{
 }
 
 // Context-aware logging methods
+func (m *MockLogger) TraceWithCtx(ctx context.Context, format string, v ...interface{}) {
+	m.addWithCtx(ctx, "TRACE", format, v...)
+}
+
 func (m *MockLogger) DebugWithCtx(ctx context.Context, format string, v ...interface{}) {
 	m.addWithCtx(ctx, "DEBUG", format, v...)
 }

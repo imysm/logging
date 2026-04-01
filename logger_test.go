@@ -15,6 +15,7 @@ func TestLogLevelString(t *testing.T) {
 		level    LogLevel
 		expected string
 	}{
+		{LevelTrace, "TRACE"},
 		{LevelDebug, "DEBUG"},
 		{LevelInfo, "INFO"},
 		{LevelWarn, "WARN"},
@@ -39,6 +40,9 @@ func TestParseLogLevel(t *testing.T) {
 		{"debug", LevelDebug},
 		{"DEBUG", LevelDebug},
 		{"Debug", LevelDebug},
+		{"trace", LevelTrace},
+		{"TRACE", LevelTrace},
+		{"Trace", LevelTrace},
 		{"info", LevelInfo},
 		{"INFO", LevelInfo},
 		{"warn", LevelWarn},
@@ -278,6 +282,7 @@ func TestLoggerOutput(t *testing.T) {
 	InitLogger(cfg)
 
 	// Write some logs
+	Logger.Trace("trace message: %s", "test")
 	Logger.Debug("debug message: %s", "test")
 	Logger.Info("info message: %s", "test")
 	Logger.Warn("warn message: %s", "test")
@@ -303,7 +308,8 @@ func TestLoggerOutput(t *testing.T) {
 	}
 
 	logContent := string(content)
-	if !strings.Contains(logContent, "debug message") &&
+	if !strings.Contains(logContent, "trace message") &&
+		!strings.Contains(logContent, "debug message") &&
 		!strings.Contains(logContent, "info message") &&
 		!strings.Contains(logContent, "warn message") &&
 		!strings.Contains(logContent, "error message") {
@@ -328,6 +334,7 @@ func TestLoggerLevelFiltering(t *testing.T) {
 				"error message",
 			},
 			absentMessages: []string{
+				"trace message",
 				"debug message",
 				"info message",
 				"warn message",
@@ -341,6 +348,7 @@ func TestLoggerLevelFiltering(t *testing.T) {
 				"error message",
 			},
 			absentMessages: []string{
+				"trace message",
 				"debug message",
 				"info message",
 			},
@@ -354,7 +362,21 @@ func TestLoggerLevelFiltering(t *testing.T) {
 				"error message",
 			},
 			absentMessages: []string{
+				"trace message",
 				"debug message",
+			},
+		},
+		{
+			name:  "debug level shows debug and above",
+			level: "debug",
+			expectedMessages: []string{
+				"debug message",
+				"info message",
+				"warn message",
+				"error message",
+			},
+			absentMessages: []string{
+				"trace message",
 			},
 		},
 	}
@@ -369,6 +391,7 @@ func TestLoggerLevelFiltering(t *testing.T) {
 			}
 			InitLogger(cfg)
 
+			Logger.Trace("trace message")
 			Logger.Debug("debug message")
 			Logger.Info("info message")
 			Logger.Warn("warn message")
