@@ -4,15 +4,18 @@ A simple, structured logging library for Go applications built on top of Go 1.21
 
 ## Features
 
-- **Structured Logging**: Log with custom fields for better searchability and analysis
-- **Context Support**: Automatic trace ID propagation through context
-- **Log Rotation**: Automatic log file rotation with size and age limits using [lumberjack](https://github.com/natefinch/lumberjack)
-- **Multiple Formats**: Support for text and JSON output formats
-- **Flexible Output**: Log to console, file, or both simultaneously
-- **Global Fields**: Set base fields that appear in all log entries
-- **Mock Logger**: Built-in mock logger for testing
+- **Five Log Levels**: `Trace`, `Debug`, `Info`, `Warn`, `Error` — each level supports three variants: basic, `WithFields`, and `WithCtx`
+- **Context Propagation**: Automatic trace ID propagation through `context.Context` via `WithTraceID` / `TraceID`
+- **Structured Logging**: Log with custom fields (`WithFields`) for better searchability and analysis
+- **Log Rotation**: Automatic log file rotation with size, age, and backup limits using [lumberjack](https://github.com/natefinch/lumberjack)
+- **Multiple Formats**: Text and JSON output formats, powered by `log/slog`
+- **Flexible Output**: Log to `console`, `file`, or `both` simultaneously
+- **Global Base Fields**: Set base fields via `SetBaseFields` that automatically appear in all log entries
+- **Call Source**: Every log entry automatically includes the caller's function name, file, and line number
+- **Dynamic Level Control**: Change log level at runtime via `SetLevel`
+- **Separate Log Files**: Create independent rotated writers via `GetRotatedWriter` for access logs, audit logs, etc.
+- **Mock Logger**: Built-in `MockLogger` for testing with assertion helpers (`HasEntry`, `LastEntry`, `LastStructuredEntry`, `Clear`)
 - **Thread-Safe**: Concurrent-safe logging with proper synchronization
-- **Level Filtering**: Dynamic log level control
 
 ## Requirements
 
