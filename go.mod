@@ -1,4 +1,4 @@
-module github.com/samyang/logging
+module github.com/imysm/logging
 
 go 1.21
 

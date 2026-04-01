@@ -23,8 +23,8 @@ func NewMockLogger() *MockLogger {
 	}
 }
 
-// add is a helper method to add log entries
-func (m *MockLogger) add(level, format string, v ...interface{}) {
+// add is a helper method to add log entries. Returns the index of the created entry.
+func (m *MockLogger) add(level, format string, v ...interface{}) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	msg := fmt.Sprintf(format, v...)
@@ -35,25 +35,23 @@ func (m *MockLogger) add(level, format string, v ...interface{}) {
 		"message":   msg,
 	}
 	m.StructuredEntries = append(m.StructuredEntries, entry)
+	return len(m.StructuredEntries) - 1
 }
 
 // addWithFields is a helper method for structured logging with fields
 func (m *MockLogger) addWithFields(level, format string, fields map[string]interface{}, v ...interface{}) {
-	m.add(level, format, v...)
+	idx := m.add(level, format, v...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Get the last entry and add the fields
-	e := m.StructuredEntries[len(m.StructuredEntries)-1]
+	e := m.StructuredEntries[idx]
 
-	// Merge base fields
 	if base := GetBaseFields(); base != nil {
 		for k, vv := range base {
 			e[k] = vv
 		}
 	}
 
-	// Add custom fields
 	for k, vv := range fields {
 		e[k] = vv
 	}
@@ -61,12 +59,11 @@ func (m *MockLogger) addWithFields(level, format string, fields map[string]inter
 
 // addWithCtx is a helper method for context-aware logging
 func (m *MockLogger) addWithCtx(ctx context.Context, level, format string, v ...interface{}) {
-	m.add(level, format, v...)
+	idx := m.add(level, format, v...)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Get the last entry and add trace_id if present
-	e := m.StructuredEntries[len(m.StructuredEntries)-1]
+	e := m.StructuredEntries[idx]
 
 	if traceID := TraceID(ctx); traceID != "" {
 		e["trace_id"] = traceID
@@ -105,6 +102,14 @@ func (m *MockLogger) Error(format string, v ...interface{}) {
 	m.add("ERROR", format, v...)
 }
 
+func (m *MockLogger) Fatal(format string, v ...interface{}) {
+	m.add("FATAL", format, v...)
+}
+
+func (m *MockLogger) Panic(format string, v ...interface{}) {
+	m.add("PANIC", format, v...)
+}
+
 func (m *MockLogger) SetLevel(level LogLevel) {
 	// MockLogger doesn't filter by level
 }
@@ -135,6 +140,14 @@ func (m *MockLogger) ErrorWithFields(format string, fields map[string]interface{
 	m.addWithFields("ERROR", format, fields, v...)
 }
 
+func (m *MockLogger) FatalWithFields(format string, fields map[string]interface{}, v ...interface{}) {
+	m.addWithFields("FATAL", format, fields, v...)
+}
+
+func (m *MockLogger) PanicWithFields(format string, fields map[string]interface{}, v ...interface{}) {
+	m.addWithFields("PANIC", format, fields, v...)
+}
+
 // Context-aware logging methods
 func (m *MockLogger) TraceWithCtx(ctx context.Context, format string, v ...interface{}) {
 	m.addWithCtx(ctx, "TRACE", format, v...)
@@ -154,6 +167,55 @@ func (m *MockLogger) WarnWithCtx(ctx context.Context, format string, v ...interf
 
 func (m *MockLogger) ErrorWithCtx(ctx context.Context, format string, v ...interface{}) {
 	m.addWithCtx(ctx, "ERROR", format, v...)
+}
+
+func (m *MockLogger) FatalWithCtx(ctx context.Context, format string, v ...interface{}) {
+	m.addWithCtx(ctx, "FATAL", format, v...)
+}
+
+func (m *MockLogger) PanicWithCtx(ctx context.Context, format string, v ...interface{}) {
+	m.addWithCtx(ctx, "PANIC", format, v...)
+}
+
+// Fields methods use type-safe Field slices
+func (m *MockLogger) TraceFields(msg string, fields ...Field) {
+	m.addWithFields("TRACE", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) DebugFields(msg string, fields ...Field) {
+	m.addWithFields("DEBUG", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) InfoFields(msg string, fields ...Field) {
+	m.addWithFields("INFO", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) WarnFields(msg string, fields ...Field) {
+	m.addWithFields("WARN", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) ErrorFields(msg string, fields ...Field) {
+	m.addWithFields("ERROR", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) FatalFields(msg string, fields ...Field) {
+	m.addWithFields("FATAL", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) PanicFields(msg string, fields ...Field) {
+	m.addWithFields("PANIC", msg, FieldsToMap(fields))
+}
+
+func (m *MockLogger) InfoFieldsWithCtx(ctx context.Context, msg string, fields ...Field) {
+	m.addWithCtx(ctx, "INFO", msg)
+	// Merge fields into the last entry
+	m.mu.Lock()
+	idx := len(m.StructuredEntries) - 1
+	e := m.StructuredEntries[idx]
+	for k, v := range FieldsToMap(fields) {
+		e[k] = v
+	}
+	m.mu.Unlock()
 }
 
 // Clear clears all logged entries. Useful for test isolation.

@@ -20,6 +20,8 @@ func TestLogLevelString(t *testing.T) {
 		{LevelInfo, "INFO"},
 		{LevelWarn, "WARN"},
 		{LevelError, "ERROR"},
+		{LevelFatal, "FATAL"},
+		{LevelPanic, "PANIC"},
 		{LogLevel(99), "UNKNOWN"},
 	}
 
