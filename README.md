@@ -6,6 +6,8 @@ A simple, structured logging library for Go applications built on top of Go 1.21
 
 - **Five Log Levels**: `Trace`, `Debug`, `Info`, `Warn`, `Error` — each level supports three variants: basic, `WithFields`, and `WithCtx`
 - **Context Propagation**: Automatic trace ID propagation through `context.Context` via `WithTraceID` / `TraceID`
+- **Context-Bound Logger**: `L(ctx)` returns a logger that automatically carries context values, no need to pass ctx on each call
+- **Chain Field Propagation**: `WithCtxFields(ctx, fields)` stores custom fields in context that flow through the entire call chain
 - **Structured Logging**: Log with custom fields (`WithFields`) for better searchability and analysis
 - **Log Rotation**: Automatic log file rotation with size, age, and backup limits using [lumberjack](https://github.com/natefinch/lumberjack)
 - **Multiple Formats**: Text and JSON output formats, powered by `log/slog`
@@ -83,100 +85,174 @@ The `LogConfig` struct allows you to configure the logger:
 | Outputs    | string  | Output destination: "console", "file", or "both"                           | "both"       |
 | AlertPretty | bool   | Whether to pretty-print alert logs                                         | false        |
 
-## Usage Examples
+## Usage
 
 ### Basic Logging
 
-```go
-logging.Logger.Trace("Very detailed trace information")
-logging.Logger.Debug("Detailed debug information")
-logging.Logger.Info("General information")
-logging.Logger.Warn("Warning message")
-logging.Logger.Error("Error occurred")
-```
-
-### Printf-Style Formatting
+Each log level has three method variants:
 
 ```go
-logging.Logger.Info("User %s performed %d actions", "Alice", 42)
-```
+// Basic
+logging.Logger.Info("User %s logged in", "Alice")
 
-### Structured Logging with Fields
-
-```go
-logging.Logger.InfoWithFields("Database query", map[string]interface{}{
-    "query": "SELECT * FROM users WHERE id = ?",
-    "duration_ms": 15,
-    "rows": 10,
+// With structured fields
+logging.Logger.InfoWithFields("User logged in", map[string]interface{}{
+    "user_id": 12345,
+    "ip":      "192.168.1.1",
 })
-```
 
-### Context-Aware Logging
-
-```go
-import "context"
-
-// Add trace ID to context
-ctx := logging.WithTraceID(context.Background(), "trace-abc-123")
-
-// Option 1: Use WithCtx methods
+// With context (auto-includes trace_id and ctx fields)
 logging.Logger.InfoWithCtx(ctx, "Processing request")
-
-// Option 2: Use L(ctx) for a context-bound logger
-log := logging.L(ctx)
-log.Info("Processing request")
-log.Warn("Slow query detected")
-log.ErrorWithFields("Request failed", map[string]interface{}{
-    "code": 500,
-    "path": "/api/users",
-})
 ```
 
-### Context Fields (Chain Propagation)
+Available for all levels: `Trace`, `Debug`, `Info`, `Warn`, `Error`.
 
-Put custom fields into context, they will be automatically included in all downstream logs:
+### L(ctx) — Context-Bound Logger
+
+`L(ctx)` returns a logger with context pre-bound. No need to pass ctx on every call:
 
 ```go
-// Set custom fields in context — these flow through the entire call chain
+log := logging.L(ctx)
+log.Info("handling request")       // auto-includes ctx fields
+log.Warn("slow query")             // auto-includes ctx fields
+log.ErrorWithFields("failed", map[string]interface{}{
+    "code": 500,
+})                                  // auto-includes ctx fields + custom fields
+```
+
+`L(ctx)` implements `LoggerInterface`, so it can be used anywhere the global `Logger` is expected.
+
+### Context Field Propagation
+
+`WithCtxFields` stores custom fields in context. They flow through the entire call chain:
+
+```go
+// Set fields once at the entry point
 ctx = logging.WithCtxFields(ctx, map[string]interface{}{
     "user_id":    123,
     "request_id": "req-xyz",
 })
 
-// Pass ctx to downstream functions, no need to pass fields explicitly
+// All downstream functions automatically get these fields
 handleRequest(ctx)
 
 func handleRequest(ctx context.Context) {
     log := logging.L(ctx)
-    log.Info("handling request")    // includes user_id, request_id
+    log.Info("handling request")  // includes user_id, request_id
     queryDB(ctx)
 }
 
 func queryDB(ctx context.Context) {
     log := logging.L(ctx)
-    log.Info("executing query")     // also includes user_id, request_id
+    log.Info("executing query")   // also includes user_id, request_id
 }
+```
+
+Multiple calls to `WithCtxFields` merge fields (later values overwrite earlier ones):
+
+```go
+ctx = logging.WithCtxFields(ctx, map[string]interface{}{"user_id": 123})
+ctx = logging.WithCtxFields(ctx, map[string]interface{}{"request_id": "abc"})
+// ctx now has both user_id and request_id
+```
+
+### Trace ID
+
+```go
+ctx := logging.WithTraceID(ctx, "trace-abc-123")
+traceID := logging.TraceID(ctx) // "trace-abc-123"
+```
+
+### Global Base Fields
+
+Set once at startup, included in all log entries:
+
+```go
+logging.SetBaseFields(map[string]interface{}{
+    "service": "my-api",
+    "version": "1.0.0",
+})
+defer logging.SetBaseFields(nil)
 ```
 
 ### Dynamic Level Control
 
 ```go
-// Change log level at runtime
 logging.Logger.SetLevel(logging.LevelTrace)
-
-// All levels including trace will now be logged
-logging.Logger.Debug("This will be visible")
+logging.Logger.SetLevel(logging.LevelDebug)
+logging.Logger.SetLevel(logging.LevelInfo)
+logging.Logger.SetLevel(logging.LevelWarn)
+logging.Logger.SetLevel(logging.LevelError)
 ```
 
-### Creating Separate Log Files
+### Separate Log Files
+
+Create independent rotated writers for access logs, audit logs, etc.:
 
 ```go
-// Create a separate access log with the same rotation policy
 accessLog := logging.GetRotatedWriter("log/access.log")
 defer accessLog.Close()
-
 accessLog.Write([]byte("GET /api/users 200\n"))
 ```
+
+Uses the same rotation policy (MaxSize, MaxBackups, MaxAge, Compress) as the main logger.
+
+## API Reference
+
+### Log Levels
+
+| Constant | Value | String |
+|----------|-------|--------|
+| `logging.LevelTrace` | 0 | `"TRACE"` |
+| `logging.LevelDebug` | 1 | `"DEBUG"` |
+| `logging.LevelInfo` | 2 | `"INFO"` |
+| `logging.LevelWarn` | 3 | `"WARN"` |
+| `logging.LevelError` | 4 | `"ERROR"` |
+
+### LoggerInterface
+
+All loggers implement this interface:
+
+```go
+type LoggerInterface interface {
+    Trace(format string, v ...interface{})
+    Debug(format string, v ...interface{})
+    Info(format string, v ...interface{})
+    Warn(format string, v ...interface{})
+    Error(format string, v ...interface{})
+
+    TraceWithFields(format string, fields map[string]interface{}, v ...interface{})
+    DebugWithFields(format string, fields map[string]interface{}, v ...interface{})
+    InfoWithFields(format string, fields map[string]interface{}, v ...interface{})
+    WarnWithFields(format string, fields map[string]interface{}, v ...interface{})
+    ErrorWithFields(format string, fields map[string]interface{}, v ...interface{})
+
+    TraceWithCtx(ctx context.Context, format string, v ...interface{})
+    DebugWithCtx(ctx context.Context, format string, v ...interface{})
+    InfoWithCtx(ctx context.Context, format string, v ...interface{})
+    WarnWithCtx(ctx context.Context, format string, v ...interface{})
+    ErrorWithCtx(ctx context.Context, format string, v ...interface{})
+
+    SetLevel(level LogLevel)
+    Sync() error
+}
+```
+
+### Package Functions
+
+| Function | Description |
+|----------|-------------|
+| `InitLogger(cfg LogConfig)` | Initialize the global logger |
+| `L(ctx) *ContextLogger` | Return a context-bound logger |
+| `WithTraceID(ctx, id) context.Context` | Set trace ID in context |
+| `TraceID(ctx) string` | Get trace ID from context |
+| `WithCtxFields(ctx, fields) context.Context` | Set custom fields in context |
+| `CtxFields(ctx) map[string]interface{}` | Get custom fields from context |
+| `SetBaseFields(fields)` | Set global base fields |
+| `GetBaseFields() map[string]interface{}` | Get copy of global base fields |
+| `WithBaseFields(fields) map[string]interface{}` | Merge global base fields with custom fields |
+| `GetGlobalConfig() LogConfig` | Get copy of current config |
+| `GetRotatedWriter(filename) io.WriteCloser` | Create a separate rotated log writer |
 
 ## Testing
 
