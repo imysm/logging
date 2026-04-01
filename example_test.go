@@ -26,6 +26,7 @@ func ExampleInitLogger() {
 
 func ExampleLogger_basic() {
 	// Basic logging at different levels
+	Logger.Trace("This is a trace message")
 	Logger.Debug("This is a debug message")
 	Logger.Info("This is an info message")
 	Logger.Warn("This is a warning message")
