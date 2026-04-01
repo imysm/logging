@@ -70,7 +70,7 @@ The `LogConfig` struct allows you to configure the logger:
 
 | Field       | Type    | Description                                                                 | Default      |
 |------------|---------|-----------------------------------------------------------------------------|--------------|
-| Level      | string  | Log level: "debug", "info", "warn", "error"                                | "info"       |
+| Level      | string  | Log level: "trace", "debug", "info", "warn", "error"                       | "info"       |
 | File       | string  | Path to the log file                                                       | "log/app.log" |
 | MaxSize    | int     | Maximum size in megabytes before rotation                                  | 10           |
 | MaxBackups | int     | Maximum number of old log files to retain                                  | 5            |
@@ -85,6 +85,7 @@ The `LogConfig` struct allows you to configure the logger:
 ### Basic Logging
 
 ```go
+logging.Logger.Trace("Very detailed trace information")
 logging.Logger.Debug("Detailed debug information")
 logging.Logger.Info("General information")
 logging.Logger.Warn("Warning message")
@@ -123,9 +124,9 @@ logging.Logger.InfoWithCtx(ctx, "Processing request")
 
 ```go
 // Change log level at runtime
-logging.Logger.SetLevel(logging.LevelDebug)
+logging.Logger.SetLevel(logging.LevelTrace)
 
-// All levels including debug will now be logged
+// All levels including trace will now be logged
 logging.Logger.Debug("This will be visible")
 ```
 
@@ -169,12 +170,13 @@ func TestMyFunction(t *testing.T) {
 
 ## Log Levels
 
-The library supports four log levels (in order of severity):
+The library supports five log levels (in order of severity):
 
-1. **Debug** - Detailed information for debugging purposes
-2. **Info** - General informational messages
-3. **Warn** - Warning messages for potentially harmful situations
-4. **Error** - Error messages for error events
+1. **Trace** - Very detailed information for tracing execution flow
+2. **Debug** - Detailed information for debugging purposes
+3. **Info** - General informational messages
+4. **Warn** - Warning messages for potentially harmful situations
+5. **Error** - Error messages for error events
 
 When you set a log level, only messages at that level or higher will be logged. For example, if you set the level to "warn", only warn and error messages will be logged.
 
