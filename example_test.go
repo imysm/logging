@@ -67,6 +67,23 @@ func ExampleLogger_withContext() {
 	// Output includes trace_id field
 }
 
+func ExampleL() {
+	// Create a context with trace ID
+	ctx := context.Background()
+	ctx = WithTraceID(ctx, "trace-abc-123")
+
+	// L returns a context-bound logger, no need to pass ctx each time
+	log := L(ctx)
+	log.Info("Processing request")
+	log.Warn("Slow query detected")
+	log.ErrorWithFields("Request failed", map[string]interface{}{
+		"code": 500,
+		"path": "/api/users",
+	})
+
+	// Output includes trace_id field in all entries
+}
+
 func ExampleLogger_levelFiltering() {
 	// Set log level to filter messages
 	Logger.SetLevel(LevelWarn)

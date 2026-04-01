@@ -187,3 +187,89 @@ func TestMockLogger_ConcurrentWrites(t *testing.T) {
 		t.Errorf("expected 10 structured entries, got %d", len(m.StructuredEntries))
 	}
 }
+
+func TestContextLogger_Basic(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	ctx = WithTraceID(ctx, "trace-123")
+
+	cl := L(ctx)
+	cl.Trace("trace msg")
+	cl.Debug("debug msg")
+	cl.Info("info msg")
+	cl.Warn("warn msg")
+	cl.Error("error msg")
+
+	if len(m.Entries) != 5 {
+		t.Fatalf("expected 5 entries, got %d", len(m.Entries))
+	}
+
+	// Check trace_id is present in all entries
+	for i, e := range m.StructuredEntries {
+		if e["trace_id"] != "trace-123" {
+			t.Errorf("entry %d: expected trace_id 'trace-123', got %v", i, e["trace_id"])
+		}
+	}
+}
+
+func TestContextLogger_WithFields(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	ctx = WithTraceID(ctx, "trace-456")
+
+	cl := L(ctx)
+	cl.InfoWithFields("user login", map[string]interface{}{
+		"user_id": 123,
+	})
+
+	entry := m.LastStructuredEntry()
+	if entry == nil {
+		t.Fatal("expected structured entry, got nil")
+	}
+
+	if entry["trace_id"] != "trace-456" {
+		t.Errorf("expected trace_id 'trace-456', got %v", entry["trace_id"])
+	}
+	if entry["user_id"] != 123 {
+		t.Errorf("expected user_id 123, got %v", entry["user_id"])
+	}
+}
+
+func TestContextLogger_ImplementsInterface(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	cl := L(ctx)
+
+	// Verify ContextLogger satisfies LoggerInterface
+	var _ LoggerInterface = cl
+
+	// Basic smoke test for SetLevel and Sync
+	cl.SetLevel(LevelDebug)
+	if err := cl.Sync(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestContextLogger_WithoutTraceID(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	cl := L(ctx)
+	cl.Info("no trace id")
+
+	entry := m.LastStructuredEntry()
+	if entry == nil {
+		t.Fatal("expected structured entry, got nil")
+	}
+
+	if _, ok := entry["trace_id"]; ok {
+		t.Error("trace_id should not be present when not set in context")
+	}
+}

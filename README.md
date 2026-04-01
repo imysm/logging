@@ -119,8 +119,17 @@ import "context"
 // Add trace ID to context
 ctx := logging.WithTraceID(context.Background(), "trace-abc-123")
 
-// Log with context - trace ID is automatically included
+// Option 1: Use WithCtx methods
 logging.Logger.InfoWithCtx(ctx, "Processing request")
+
+// Option 2: Use L(ctx) for a context-bound logger
+log := logging.L(ctx)
+log.Info("Processing request")
+log.Warn("Slow query detected")
+log.ErrorWithFields("Request failed", map[string]interface{}{
+    "code": 500,
+    "path": "/api/users",
+})
 ```
 
 ### Dynamic Level Control
