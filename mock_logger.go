@@ -72,6 +72,11 @@ func (m *MockLogger) addWithCtx(ctx context.Context, level, format string, v ...
 		e["trace_id"] = traceID
 	}
 
+	// Merge ctx fields
+	for k, v := range CtxFields(ctx) {
+		e[k] = v
+	}
+
 	// Merge base fields
 	if base := GetBaseFields(); base != nil {
 		for k, vv := range base {

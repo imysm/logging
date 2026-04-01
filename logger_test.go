@@ -554,6 +554,33 @@ func TestTraceID(t *testing.T) {
 	}
 }
 
+func TestCtxFields(t *testing.T) {
+	ctx := context.Background()
+
+	// No ctx fields
+	if got := CtxFields(ctx); got != nil {
+		t.Errorf("expected nil ctx fields, got %v", got)
+	}
+
+	// With ctx fields
+	ctx = WithCtxFields(ctx, map[string]interface{}{
+		"user_id": 123,
+		"env":     "test",
+	})
+	got := CtxFields(ctx)
+	if got["user_id"] != 123 {
+		t.Errorf("expected user_id 123, got %v", got["user_id"])
+	}
+	if got["env"] != "test" {
+		t.Errorf("expected env 'test', got %v", got["env"])
+	}
+
+	// Empty ctx fields
+	if got := CtxFields(context.Background()); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
 func TestSetLevel(t *testing.T) {
 	tempDir := t.TempDir()
 	testLogFile := filepath.Join(tempDir, "test.log")

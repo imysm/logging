@@ -132,6 +132,32 @@ log.ErrorWithFields("Request failed", map[string]interface{}{
 })
 ```
 
+### Context Fields (Chain Propagation)
+
+Put custom fields into context, they will be automatically included in all downstream logs:
+
+```go
+// Set custom fields in context — these flow through the entire call chain
+ctx = logging.WithCtxFields(ctx, map[string]interface{}{
+    "user_id":    123,
+    "request_id": "req-xyz",
+})
+
+// Pass ctx to downstream functions, no need to pass fields explicitly
+handleRequest(ctx)
+
+func handleRequest(ctx context.Context) {
+    log := logging.L(ctx)
+    log.Info("handling request")    // includes user_id, request_id
+    queryDB(ctx)
+}
+
+func queryDB(ctx context.Context) {
+    log := logging.L(ctx)
+    log.Info("executing query")     // also includes user_id, request_id
+}
+```
+
 ### Dynamic Level Control
 
 ```go

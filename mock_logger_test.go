@@ -273,3 +273,69 @@ func TestContextLogger_WithoutTraceID(t *testing.T) {
 		t.Error("trace_id should not be present when not set in context")
 	}
 }
+
+func TestContextLogger_WithCtxFields(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	ctx = WithCtxFields(ctx, map[string]interface{}{
+		"user_id":    123,
+		"request_id": "req-abc",
+	})
+
+	cl := L(ctx)
+	cl.Info("processing request")
+	cl.InfoWithFields("user login", map[string]interface{}{
+		"ip": "1.2.3.4",
+	})
+
+	if len(m.StructuredEntries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(m.StructuredEntries))
+	}
+
+	// First entry: basic log with ctx fields
+	e1 := m.StructuredEntries[0]
+	if e1["user_id"] != 123 {
+		t.Errorf("expected user_id 123, got %v", e1["user_id"])
+	}
+	if e1["request_id"] != "req-abc" {
+		t.Errorf("expected request_id 'req-abc', got %v", e1["request_id"])
+	}
+
+	// Second entry: WithFields merged with ctx fields
+	e2 := m.StructuredEntries[1]
+	if e2["user_id"] != 123 {
+		t.Errorf("expected user_id 123, got %v", e2["user_id"])
+	}
+	if e2["ip"] != "1.2.3.4" {
+		t.Errorf("expected ip '1.2.3.4', got %v", e2["ip"])
+	}
+}
+
+func TestContextLogger_WithCtxFieldsMerge(t *testing.T) {
+	m := NewMockLogger()
+	Logger = m
+
+	ctx := context.Background()
+	ctx = WithCtxFields(ctx, map[string]interface{}{
+		"trace_id": "override-this",
+		"user_id":  1,
+	})
+	// Second call merges, does not replace
+	ctx = WithCtxFields(ctx, map[string]interface{}{
+		"request_id": "req-xyz",
+		"user_id":    2, // override previous
+	})
+
+	fields := CtxFields(ctx)
+	if fields["user_id"] != 2 {
+		t.Errorf("expected user_id 2 (overridden), got %v", fields["user_id"])
+	}
+	if fields["request_id"] != "req-xyz" {
+		t.Errorf("expected request_id 'req-xyz', got %v", fields["request_id"])
+	}
+	if fields["trace_id"] != "override-this" {
+		t.Errorf("expected trace_id preserved, got %v", fields["trace_id"])
+	}
+}

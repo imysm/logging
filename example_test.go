@@ -84,6 +84,21 @@ func ExampleL() {
 	// Output includes trace_id field in all entries
 }
 
+func ExampleL_withCtxFields() {
+	// Put custom fields into context, they will be included in all logs downstream
+	ctx := context.Background()
+	ctx = WithCtxFields(ctx, map[string]interface{}{
+		"user_id":    123,
+		"request_id": "req-xyz",
+	})
+
+	log := L(ctx)
+	log.Info("handling request")           // includes user_id, request_id
+	log.ErrorWithFields("db error", map[string]interface{}{
+		"query": "SELECT * FROM users",
+	}) // includes user_id, request_id, query
+}
+
 func ExampleLogger_levelFiltering() {
 	// Set log level to filter messages
 	Logger.SetLevel(LevelWarn)

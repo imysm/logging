@@ -412,6 +412,10 @@ func (l *logger) logWithCtx(ctx context.Context, level LogLevel, format string, 
 		attrs = append(attrs, slog.String("trace_id", traceID))
 	}
 
+	for k, v := range CtxFields(ctx) {
+		attrs = append(attrs, slog.Any(k, v))
+	}
+
 	switch level {
 	case LevelTrace:
 		l.lg.Log(context.Background(), slogLevelTrace, msg, attrsToAny(attrs)...)

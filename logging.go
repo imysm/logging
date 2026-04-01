@@ -9,6 +9,7 @@ import (
 type ctxKey string
 
 const traceIDKey ctxKey = "trace_id"
+const ctxFieldsKey ctxKey = "ctx_fields"
 
 // Init initializes a basic logger that writes to stderr with standard flags.
 // Call once on startup.
@@ -29,6 +30,35 @@ func TraceID(ctx context.Context) string {
 		return s
 	}
 	return ""
+}
+
+// WithCtxFields returns a child context carrying custom fields for downstream logging.
+// These fields will be automatically included in all log entries when using L(ctx).
+//
+//	ctx = logging.WithCtxFields(ctx, map[string]interface{}{
+//	    "user_id":    123,
+//	    "request_id": "req-abc",
+//	})
+//	logging.L(ctx).Info("processing") // logs include user_id and request_id
+func WithCtxFields(ctx context.Context, fields map[string]interface{}) context.Context {
+	existing := CtxFields(ctx)
+	merged := make(map[string]interface{}, len(existing)+len(fields))
+	for k, v := range existing {
+		merged[k] = v
+	}
+	for k, v := range fields {
+		merged[k] = v
+	}
+	return context.WithValue(ctx, ctxFieldsKey, merged)
+}
+
+// CtxFields extracts custom fields from context if present.
+func CtxFields(ctx context.Context) map[string]interface{} {
+	v := ctx.Value(ctxFieldsKey)
+	if m, ok := v.(map[string]interface{}); ok {
+		return m
+	}
+	return nil
 }
 
 // L returns a context-bound logger. All log methods on the returned logger
@@ -114,16 +144,22 @@ func (c *ContextLogger) Sync() error {
 	return Logger.Sync()
 }
 
-// mergedFields returns a copy of fields with trace_id injected from the bound context.
+// mergedFields returns a copy of fields with context fields (trace_id and custom ctx fields) injected.
 func (c *ContextLogger) mergedFields(fields map[string]interface{}) map[string]interface{} {
+	ctxFields := CtxFields(c.ctx)
 	traceID := TraceID(c.ctx)
-	if traceID == "" {
+	if len(ctxFields) == 0 && traceID == "" {
 		return fields
 	}
-	merged := make(map[string]interface{}, len(fields)+1)
+	merged := make(map[string]interface{}, len(fields)+len(ctxFields)+1)
+	for k, v := range ctxFields {
+		merged[k] = v
+	}
 	for k, v := range fields {
 		merged[k] = v
 	}
-	merged["trace_id"] = traceID
+	if traceID != "" {
+		merged["trace_id"] = traceID
+	}
 	return merged
 }
